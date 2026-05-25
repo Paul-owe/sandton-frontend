@@ -5,6 +5,10 @@ export interface PriceListItemVariant {
   price: number
   currency: string
   active: boolean
+  defaultPrice?: number
+  defaultCurrency?: string
+  defaultActive?: boolean
+  branchPricingApplied?: boolean
 }
 
 export interface PriceListItem {
@@ -20,6 +24,11 @@ export interface PriceListItem {
   requiresVariant: boolean
   active: boolean
   variants?: PriceListItemVariant[]
+  defaultBasePrice?: number | null
+  defaultCurrency?: string
+  defaultActive?: boolean
+  branchPricingApplied?: boolean
+  pricingBranchId?: string | number | null
 }
 
 export interface PriceListFilters {
@@ -27,4 +36,17 @@ export interface PriceListFilters {
   category?: string
   section?: string
   active?: boolean
+  branchId?: string | number
+  page?: number
+  size?: number
+}
+
+export interface PriceListPage {
+  content: PriceListItem[]
+  number: number
+  size: number
+  totalPages: number
+  totalElements: number
+  first: boolean
+  last: boolean
 }

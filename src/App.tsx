@@ -12,6 +12,8 @@ import { DocumentsPage } from './pages/DocumentsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { MobileCapturePage } from './pages/MobileCapturePage'
 import { PriceListsPage } from './pages/PriceListsPage'
+import { InvoicesPage } from './pages/InvoicesPage'
+import { InvoiceDetailPage } from './pages/InvoiceDetailPage'
 
 function AdminOnly({ children }: { children: ReactElement }) {
   const { isAdmin } = useAuth()
@@ -40,6 +42,8 @@ function AppRoutes() {
         <Route path="/patients/:id" element={<PatientProfilePage />} />
         <Route path="/documents" element={<DocumentsPage />} />
         <Route path="/price-lists" element={<PriceListsPage />} />
+        <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/invoices/:id" element={<InvoiceDetailPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route
           path="/branches"

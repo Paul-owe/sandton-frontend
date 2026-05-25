@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent, type TextareaHTMLAttributes } from 'react'
-import { useParams } from 'react-router-dom'
-import { Download, Eye, FileText, Printer } from 'lucide-react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Download, Eye, FileText, Printer, Search } from 'lucide-react'
 import { createDoctorNoteWithDocument, getPatientDoctorNotes } from '../api/doctorNoteApi'
 import { searchPriceListItems } from '../api/priceListApi'
 import {
@@ -80,12 +80,16 @@ type UploadDraft = {
   payload: Omit<UploadState, 'file'>
 }
 
+function getTodayDateInputValue() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function createInitialUploadState(documentType: DocumentType = 'PATIENT_DETAILS'): UploadState {
   return {
     documentType,
     notes: '',
     file: null as File | null,
-    visitDate: '',
+    visitDate: documentType === 'DOCTORS_NOTES' ? getTodayDateInputValue() : '',
     attendingDoctorName: '',
     presentingComplaintSummary: '',
     diagnosisSummary: '',
@@ -103,6 +107,7 @@ function createUploadStateFromDraft(
   return {
     ...createInitialUploadState(documentType),
     ...payload,
+    visitDate: payload?.visitDate || createInitialUploadState(documentType).visitDate,
     file: null,
     chargeLines: Array.isArray(payload?.chargeLines) ? payload.chargeLines : [],
   }
@@ -147,6 +152,8 @@ function createPatientEditForm(patient?: Patient | null): CreatePatientPayload {
 
 export function PatientProfilePage() {
   const { id = '' } = useParams()
+  const location = useLocation()
+  const navigate = useNavigate()
   const { isAdmin } = useAuth()
   const [patient, setPatient] = useState<Patient | null>(null)
   const [documents, setDocuments] = useState<PatientDocument[]>([])
@@ -174,6 +181,7 @@ export function PatientProfilePage() {
   const [priceSearchQuery, setPriceSearchQuery] = useState('')
   const [priceSearchLoading, setPriceSearchLoading] = useState(false)
   const [priceSearchResults, setPriceSearchResults] = useState<PriceListItem[]>([])
+  const [showPriceSuggestions, setShowPriceSuggestions] = useState(false)
   const [variantPickerItem, setVariantPickerItem] = useState<PriceListItem | null>(null)
   const [variantPickerSelection, setVariantPickerSelection] = useState('')
   const [savedUploadDraftContext, setSavedUploadDraftContext] = useState<UploadContext | null>(null)
@@ -216,6 +224,16 @@ export function PatientProfilePage() {
   useEffect(() => {
     reloadProfile()
   }, [id, isAdmin])
+
+  useEffect(() => {
+    if (!location.state || !(location.state as { openDoctorNotes?: boolean }).openDoctorNotes) {
+      return
+    }
+
+    setTab('notes')
+    openUploadModal('notes')
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.pathname, location.state, navigate])
 
   useEffect(() => {
     refreshSavedUploadDraft()
@@ -261,6 +279,7 @@ export function PatientProfilePage() {
     if (!uploadOpen || payload.documentType !== 'DOCTORS_NOTES') {
       setPriceSearchResults([])
       setPriceSearchLoading(false)
+      setShowPriceSuggestions(false)
       return
     }
 
@@ -275,7 +294,8 @@ export function PatientProfilePage() {
     setPriceSearchLoading(true)
     const timeoutId = window.setTimeout(async () => {
       try {
-        const matches = await searchPriceListItems(trimmedQuery)
+        const branchId = patient?.branchId ? String(patient.branchId) : undefined
+        const matches = await searchPriceListItems(trimmedQuery, branchId)
         if (!active) return
         setPriceSearchResults(matches)
       } catch {
@@ -289,7 +309,17 @@ export function PatientProfilePage() {
       active = false
       window.clearTimeout(timeoutId)
     }
-  }, [payload.documentType, priceSearchQuery, uploadOpen])
+  }, [patient?.branchId, payload.documentType, priceSearchQuery, uploadOpen])
+
+  useEffect(() => {
+    if (!uploadOpen || uploadContext !== 'notes' || payload.documentType === 'DOCTORS_NOTES') return
+
+    setPayload((current) => ({
+      ...current,
+      documentType: 'DOCTORS_NOTES',
+      visitDate: current.visitDate || getTodayDateInputValue(),
+    }))
+  }, [payload.documentType, uploadContext, uploadOpen])
 
   const patientDetailDocuments = useMemo(
     () => documents.filter((document) => document.documentType === 'PATIENT_DETAILS'),
@@ -369,6 +399,7 @@ export function PatientProfilePage() {
     setPriceSearchQuery('')
     setPriceSearchResults([])
     setPriceSearchLoading(false)
+    setShowPriceSuggestions(false)
     setVariantPickerItem(null)
     setVariantPickerSelection('')
   }
@@ -395,7 +426,7 @@ export function PatientProfilePage() {
       const updated = await grantPatientDetailsEditOnce(patient.id)
       setPatient(updated)
     } catch (err: any) {
-      setPageError(err?.response?.data?.message || 'Unable to grant one-time front desk access right now.')
+      setPageError(err?.response?.data?.message || 'Unable to open patient details for editing right now.')
     }
   }
 
@@ -548,16 +579,17 @@ export function PatientProfilePage() {
   }
 
   const uploadTitle =
-    uploadContext === 'details'
+    uploadContext === 'notes'
+      ? "Add Doctor's Note"
+      : uploadContext === 'details'
       ? 'Upload Patient Details Photo'
-      : uploadContext === 'notes'
-        ? "Add Doctor's Note"
-        : 'Upload Patient Document'
+      : 'Upload Patient Document'
   const patientDisplayName = [patient?.name, patient?.surname].filter(Boolean).join(' ').trim()
   const previewFrameUrl =
     previewUrl && previewDocument && isPdfDocument(previewDocument)
       ? `${previewUrl}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`
       : previewUrl
+  const isDoctorNotesUpload = uploadContext === 'notes' || payload.documentType === 'DOCTORS_NOTES'
 
   const addChargeLine = (item: PriceListItem, variant?: PriceListItemVariant) => {
     const unitPrice = variant ? Number(variant.price) : Number(item.basePrice || 0)
@@ -579,6 +611,7 @@ export function PatientProfilePage() {
     setPayload((current) => ({ ...current, chargeLines: [...current.chargeLines, nextLine] }))
     setPriceSearchQuery('')
     setPriceSearchResults([])
+    setShowPriceSuggestions(false)
     setVariantPickerItem(null)
     setVariantPickerSelection('')
   }
@@ -587,6 +620,22 @@ export function PatientProfilePage() {
     () => payload.chargeLines.reduce((sum, line) => sum + Number(line.lineTotal || 0), 0),
     [payload.chargeLines],
   )
+  const showPriceSuggestionPanel =
+    showPriceSuggestions &&
+    payload.documentType === 'DOCTORS_NOTES' &&
+    priceSearchQuery.trim().length >= 2 &&
+    (priceSearchLoading || priceSearchResults.length > 0)
+
+  const choosePriceSearchResult = (item: PriceListItem) => {
+    setError('')
+    if (item.requiresVariant) {
+      setVariantPickerItem(item)
+      setVariantPickerSelection('')
+      setShowPriceSuggestions(false)
+      return
+    }
+    addChargeLine(item)
+  }
 
   return (
     <div className="space-y-5">
@@ -664,7 +713,7 @@ export function PatientProfilePage() {
             </div>
             {!isAdmin && patient?.allowFrontDeskDetailsEditOnce ? (
               <div className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
-                One-time front desk edit access is active for this patient record.
+                Patient details can be updated right now.
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -695,7 +744,7 @@ export function PatientProfilePage() {
               <div className="flex flex-wrap gap-2">
                 {isAdmin && patientDetailDocuments.length > 0 && !patient?.allowFrontDeskDetailsEditOnce ? (
                   <Button variant="secondary" onClick={grantOneTimeEdit}>
-                    Grant one-time front desk edit
+                    Allow patient details update
                   </Button>
                 ) : null}
                 {canManagePatientDetails ? (
@@ -708,13 +757,13 @@ export function PatientProfilePage() {
 
             {!isAdmin && patientDetailsLockedForFrontDesk ? (
               <div className="mb-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-                Patient details are already attached. Front desk cannot change them unless an admin grants one-time access.
+                Patient details are already attached and cannot be changed from this screen right now.
               </div>
             ) : null}
 
             {isAdmin && patient?.allowFrontDeskDetailsEditOnce ? (
               <div className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
-                One-time front desk edit access is active. It will be consumed automatically the next time front desk saves changes for this patient.
+                Patient details can be updated right now.
               </div>
             ) : null}
 
@@ -850,6 +899,14 @@ export function PatientProfilePage() {
                     ) : null}
                   </div>
 
+                  {note.invoiceId ? (
+                    <div className="flex justify-end">
+                      <Button variant="secondary" onClick={() => navigate(`/invoices/${note.invoiceId}`)}>
+                        Open Invoice
+                      </Button>
+                    </div>
+                  ) : null}
+
                   <div className="grid gap-4 md:grid-cols-2">
                     <ProfileField label="Presenting Complaint" value={note.presentingComplaintSummary} />
                     <ProfileField label="Diagnosis" value={note.diagnosisSummary} />
@@ -932,54 +989,50 @@ export function PatientProfilePage() {
             file={payload.file}
             onFileChange={(file) => setPayload({ ...payload, file })}
           />
-          <Input
-            placeholder="Short note about this upload"
-            value={payload.notes}
-            onChange={(e) => setPayload({ ...payload, notes: e.target.value })}
-          />
+          {!isDoctorNotesUpload ? (
+            <Input
+              placeholder="Short note about this upload"
+              value={payload.notes}
+              onChange={(e) => setPayload({ ...payload, notes: e.target.value })}
+            />
+          ) : null}
 
-          {payload.documentType === 'DOCTORS_NOTES' ? (
+          {isDoctorNotesUpload ? (
             <>
-              <Input
-                type="date"
-                value={payload.visitDate}
-                onChange={(e) => setPayload({ ...payload, visitDate: e.target.value })}
-              />
-              <Input
-                placeholder="Attending Doctor Name"
-                value={payload.attendingDoctorName}
-                onChange={(e) => setPayload({ ...payload, attendingDoctorName: e.target.value })}
-              />
-              <TextAreaField
-                className="md:col-span-2"
-                placeholder="Presenting Complaint Summary"
-                value={payload.presentingComplaintSummary}
-                onChange={(e) => setPayload({ ...payload, presentingComplaintSummary: e.target.value })}
-              />
-              <TextAreaField
-                className="md:col-span-2"
-                placeholder="Diagnosis Summary"
-                value={payload.diagnosisSummary}
-                onChange={(e) => setPayload({ ...payload, diagnosisSummary: e.target.value })}
-              />
-              <TextAreaField
-                className="md:col-span-2"
-                placeholder="Treatment Summary"
-                value={payload.treatmentSummary}
-                onChange={(e) => setPayload({ ...payload, treatmentSummary: e.target.value })}
-              />
-              <TextAreaField
-                className="md:col-span-2"
-                placeholder="Review Notes"
-                value={payload.reviewNotes}
-                onChange={(e) => setPayload({ ...payload, reviewNotes: e.target.value })}
-              />
-              <Input
-                className="md:col-span-2"
-                placeholder="Accounts Reference Number"
-                value={payload.accountsReferenceNumber}
-                onChange={(e) => setPayload({ ...payload, accountsReferenceNumber: e.target.value })}
-              />
+              <label className="space-y-2 md:col-span-2">
+                <span className="text-sm font-medium text-slate-700">Visit Date</span>
+                <Input
+                  type="date"
+                  value={payload.visitDate}
+                  onChange={(e) => setPayload({ ...payload, visitDate: e.target.value })}
+                />
+              </label>
+              <div className="hidden">
+                <Input
+                  value={payload.attendingDoctorName}
+                  onChange={(e) => setPayload({ ...payload, attendingDoctorName: e.target.value })}
+                />
+                <TextAreaField
+                  value={payload.presentingComplaintSummary}
+                  onChange={(e) => setPayload({ ...payload, presentingComplaintSummary: e.target.value })}
+                />
+                <TextAreaField
+                  value={payload.diagnosisSummary}
+                  onChange={(e) => setPayload({ ...payload, diagnosisSummary: e.target.value })}
+                />
+                <TextAreaField
+                  value={payload.treatmentSummary}
+                  onChange={(e) => setPayload({ ...payload, treatmentSummary: e.target.value })}
+                />
+                <TextAreaField
+                  value={payload.reviewNotes}
+                  onChange={(e) => setPayload({ ...payload, reviewNotes: e.target.value })}
+                />
+                <Input
+                  value={payload.accountsReferenceNumber}
+                  onChange={(e) => setPayload({ ...payload, accountsReferenceNumber: e.target.value })}
+                />
+              </div>
 
               <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -995,11 +1048,55 @@ export function PatientProfilePage() {
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                  <Input
-                    placeholder="Search price list by name, code, section, or specimen"
-                    value={priceSearchQuery}
-                    onChange={(e) => setPriceSearchQuery(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-3 text-slate-400" size={16} />
+                    <Input
+                      className="pl-9 pr-3"
+                      placeholder="Search price list by name, code, section, or specimen"
+                      value={priceSearchQuery}
+                      onFocus={() => setShowPriceSuggestions(true)}
+                      onBlur={() => window.setTimeout(() => setShowPriceSuggestions(false), 120)}
+                      onChange={(e) => {
+                        setPriceSearchQuery(e.target.value)
+                        setShowPriceSuggestions(true)
+                      }}
+                    />
+
+                    {showPriceSuggestionPanel ? (
+                      <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+                        {priceSearchLoading ? (
+                          <div className="px-4 py-3 text-sm text-slate-500">Searching price list...</div>
+                        ) : (
+                          priceSearchResults.map((item) => (
+                            <button
+                              key={String(item.id)}
+                              type="button"
+                              className="flex w-full items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50"
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                choosePriceSearchResult(item)
+                              }}
+                            >
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">{item.name}</p>
+                                <p className="text-xs text-slate-500">
+                                  {item.category.replaceAll('_', ' ')}
+                                  {item.code ? ` | Code: ${item.code}` : ''}
+                                  {item.specimenType ? ` | Specimen: ${item.specimenType}` : ''}
+                                  {item.section ? ` | Section: ${item.section}` : ''}
+                                </p>
+                              </div>
+                              <p className="text-xs text-slate-400">
+                                {item.requiresVariant
+                                  ? `Choose option${item.variants?.length ? ` (${item.variants.length})` : ''}`
+                                  : formatCurrency(item.basePrice, item.currency)}
+                              </p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
                     {priceSearchLoading
                       ? 'Searching price list...'
@@ -1040,47 +1137,6 @@ export function PatientProfilePage() {
                         Add variant
                       </Button>
                     </div>
-                  </div>
-                ) : null}
-
-                {priceSearchResults.length > 0 ? (
-                  <div className="mt-3 space-y-2">
-                    {priceSearchResults.map((item) => (
-                      <div
-                        key={String(item.id)}
-                        className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between"
-                      >
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">{item.name}</p>
-                          <p className="text-xs text-slate-500">
-                            {item.category.replaceAll('_', ' ')}
-                            {item.code ? ` | Code: ${item.code}` : ''}
-                            {item.specimenType ? ` | Specimen: ${item.specimenType}` : ''}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-start gap-2 md:items-end">
-                          <p className="text-sm font-semibold text-slate-900">
-                            {item.requiresVariant
-                              ? `Variant required${item.variants?.length ? ` (${item.variants.length} options)` : ''}`
-                              : formatCurrency(item.basePrice, item.currency)}
-                          </p>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            onClick={() => {
-                              if (item.requiresVariant) {
-                                setVariantPickerItem(item)
-                                setVariantPickerSelection('')
-                                return
-                              }
-                              addChargeLine(item)
-                            }}
-                          >
-                            {item.requiresVariant ? 'Choose option' : 'Add item'}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 ) : null}
 
@@ -1139,7 +1195,7 @@ export function PatientProfilePage() {
               Cancel
             </Button>
             <Button type="submit" disabled={saving}>
-              {saving ? 'Saving...' : payload.documentType === 'DOCTORS_NOTES' ? "Save Doctor's Note" : 'Upload'}
+              {saving ? 'Saving...' : isDoctorNotesUpload ? "Save Doctor's Note" : 'Upload'}
             </Button>
           </div>
         </form>
@@ -1172,11 +1228,14 @@ export function PatientProfilePage() {
               </option>
             ))}
           </Select>
-          <Input
-            type="date"
-            value={String(editForm.dateOfBirth || '')}
-            onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
-          />
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-700">Date of Birth</span>
+            <Input
+              type="date"
+              value={String(editForm.dateOfBirth || '')}
+              onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+            />
+          </label>
           <Input
             placeholder="ID Number"
             value={String(editForm.idNumber || '')}
@@ -1222,11 +1281,14 @@ export function PatientProfilePage() {
             value={String(editForm.nextOfKinContact || '')}
             onChange={(e) => setEditForm({ ...editForm, nextOfKinContact: e.target.value })}
           />
-          <Input
-            type="date"
-            value={String(editForm.dateOfAdmission || '')}
-            onChange={(e) => setEditForm({ ...editForm, dateOfAdmission: e.target.value })}
-          />
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-700">Date of Admission</span>
+            <Input
+              type="date"
+              value={String(editForm.dateOfAdmission || '')}
+              onChange={(e) => setEditForm({ ...editForm, dateOfAdmission: e.target.value })}
+            />
+          </label>
           <DocumentFilePicker
             className="md:col-span-2"
             file={editPatientDetailsFile}
@@ -1241,7 +1303,7 @@ export function PatientProfilePage() {
           <div className="md:col-span-2 rounded-xl bg-brand-50 p-3 text-sm text-brand-800">
             {isAdmin
               ? 'You can update the patient record and optionally replace the attached patient details file.'
-              : 'This is a one-time front desk edit. Saving the patient record will consume the granted permission, with or without a replacement file.'}
+              : 'You can update the patient record from this screen and optionally replace the attached patient details file.'}
           </div>
           {editError ? <p className="md:col-span-2 rounded-xl bg-rose-50 p-2 text-sm text-rose-700">{editError}</p> : null}
           <div className="md:col-span-2 flex justify-end gap-2">
@@ -1538,11 +1600,11 @@ function isPdfDocument(document?: PatientDocument | null) {
 function auditActionShortLabel(action?: string) {
   switch (action) {
     case 'PATIENT_FRONTDESK_EDIT_GRANTED':
-      return 'Granted'
+      return 'Edit opened'
     case 'PATIENT_FRONTDESK_EDIT_SAVED':
       return 'Saved'
     case 'PATIENT_FRONTDESK_EDIT_USED':
-      return 'Consumed'
+      return 'Edit closed'
     case 'PATIENT_UPDATED':
       return 'Updated'
     default:
@@ -1553,11 +1615,11 @@ function auditActionShortLabel(action?: string) {
 function auditActionLabel(action?: string) {
   switch (action) {
     case 'PATIENT_FRONTDESK_EDIT_GRANTED':
-      return 'Admin granted one-time front desk edit access'
+      return 'Patient details were opened for editing'
     case 'PATIENT_FRONTDESK_EDIT_SAVED':
-      return 'Front desk saved one-time patient record changes'
+      return 'Patient record changes were saved'
     case 'PATIENT_FRONTDESK_EDIT_USED':
-      return 'One-time front desk edit permission was consumed'
+      return 'Patient details edit was completed'
     case 'PATIENT_UPDATED':
       return 'Patient record was updated'
     default:

@@ -1,4 +1,4 @@
-import { Files, LayoutDashboard, Settings, Users, Building2, FolderOpen, ClipboardList } from 'lucide-react'
+import { Files, LayoutDashboard, Settings, Users, Building2, ClipboardList, FileText } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
 import { useAuth } from '../../contexts/AuthContext'
@@ -6,8 +6,8 @@ import { useAuth } from '../../contexts/AuthContext'
 const links = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, admin: false },
   { to: '/patients', label: 'Patients', icon: Files, admin: false },
-  { to: '/documents', label: 'Documents', icon: FolderOpen, admin: false },
   { to: '/price-lists', label: 'Price Lists', icon: ClipboardList, admin: false },
+  { to: '/invoices', label: 'Invoices', icon: FileText, admin: false },
   { to: '/branches', label: 'Branches', icon: Building2, admin: true },
   { to: '/users', label: 'Users', icon: Users, admin: true },
   { to: '/settings', label: 'Settings', icon: Settings, admin: false },

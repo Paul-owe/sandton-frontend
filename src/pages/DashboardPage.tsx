@@ -1,22 +1,37 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getDashboardSummary, type DashboardSummary } from '../api/dashboardApi'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
-import { searchPatients } from '../api/patientApi'
 
 export function DashboardPage() {
-  const [patientsVisible, setPatientsVisible] = useState(0)
+  const [summary, setSummary] = useState<DashboardSummary | null>(null)
 
   useEffect(() => {
-    searchPatients('').then((list) => setPatientsVisible(list.length)).catch(() => setPatientsVisible(0))
+    let cancelled = false
+
+    const loadSummary = async () => {
+      try {
+        const nextSummary = await getDashboardSummary()
+        if (!cancelled) setSummary(nextSummary)
+      } catch {
+        if (!cancelled) setSummary(null)
+      }
+    }
+
+    void loadSummary()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const cards = [
-    { label: 'Patients Visible', value: patientsVisible },
-    { label: 'Documents Uploaded', value: '-' },
-    { label: "Doctor's Notes", value: '-' },
-    { label: 'Branch Access', value: 'Scoped' },
+    { label: 'Patients Visible', value: formatDashboardValue(summary?.patientsVisible) },
+    { label: 'Documents Uploaded', value: formatDashboardValue(summary?.documentsUploaded) },
+    { label: "Doctor's Notes", value: formatDashboardValue(summary?.doctorsNotes) },
+    { label: 'Branch Access', value: summary?.branchAccess || '-' },
   ]
 
   return (
@@ -33,8 +48,8 @@ export function DashboardPage() {
           <Link to="/patients">
             <Button variant="secondary">Search Patient</Button>
           </Link>
-          <Link to="/documents">
-            <Button variant="secondary">Upload Document</Button>
+          <Link to="/patients?intent=doctor-notes">
+            <Button variant="secondary">Upload Doctors Notes</Button>
           </Link>
         </div>
       </Card>
@@ -59,4 +74,8 @@ export function DashboardPage() {
       </Card>
     </div>
   )
+}
+
+function formatDashboardValue(value?: number) {
+  return typeof value === 'number' ? value.toLocaleString() : '-'
 }

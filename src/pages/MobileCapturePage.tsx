@@ -5,6 +5,11 @@ import { getMobileCaptureSessionByToken, uploadMobileCaptureSessionFile } from '
 import type { MobileCaptureSession } from '../types/mobileCapture'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
+import {
+  clearTransientApiBaseUrlOverride,
+  normalizeApiBaseUrl,
+  setTransientApiBaseUrlOverride,
+} from '../utils/runtimeConfig'
 
 export function MobileCapturePage() {
   const { token = '' } = useParams()
@@ -14,6 +19,13 @@ export function MobileCapturePage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const apiBaseUrlFromLink = normalizeApiBaseUrl(new URLSearchParams(window.location.search).get('api') || '')
+
+  useEffect(() => {
+    if (!apiBaseUrlFromLink) return
+    setTransientApiBaseUrlOverride(apiBaseUrlFromLink)
+    return () => clearTransientApiBaseUrlOverride()
+  }, [apiBaseUrlFromLink])
 
   useEffect(() => {
     if (!token) {

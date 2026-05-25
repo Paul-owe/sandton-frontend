@@ -29,5 +29,6 @@ export interface DoctorNote {
   totalAmount?: number
   currency?: string
   createdAt?: string
+  invoiceId?: string | number | null
   [key: string]: unknown
 }

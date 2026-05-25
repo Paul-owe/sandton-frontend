@@ -11,7 +11,17 @@ function normalizePatientPayload(payload: Partial<CreatePatientPayload>): Partia
 }
 
 export async function searchPatients(query: string): Promise<Patient[]> {
-  const { data } = await http.get('/patients/search', { params: { query } })
+  const normalizedQuery = String(query || '').trim()
+  if (!normalizedQuery) {
+    return []
+  }
+
+  const { data } = await http.get('/patients/search', { params: { query: normalizedQuery } })
+  return pickArray<Patient>(data)
+}
+
+export async function listVisiblePatients(): Promise<Patient[]> {
+  const { data } = await http.get('/patients/search', { params: { query: '' } })
   return pickArray<Patient>(data)
 }
 

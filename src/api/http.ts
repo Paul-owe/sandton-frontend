@@ -27,7 +27,9 @@ publicHttp.interceptors.request.use((config) => {
 http.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    const status = error?.response?.status
+    const message = typeof error?.response?.data?.message === 'string' ? error.response.data.message : ''
+    if (status === 401 || (status === 403 && message === 'Unauthenticated')) {
       clearAuthSession()
       if (window.location.pathname !== '/login') window.location.href = '/login'
     }

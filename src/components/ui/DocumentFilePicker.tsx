@@ -10,12 +10,9 @@ import type { MobileCaptureSession } from '../../types/mobileCapture'
 import { buildScannedPdfFile, defaultScanCrop, type ScanCrop, type ScanPageDraft } from '../../utils/uploadProcessing'
 import {
   buildMobileCaptureUrl,
-  clearPublicAppUrlOverride,
+  detectPublicAppBaseUrl,
   getPublicAppBaseUrl,
-  getStoredPublicAppUrlOverride,
   isLikelyLocalOnlyUrl,
-  normalizePublicAppUrl,
-  setPublicAppUrlOverride,
 } from '../../utils/runtimeConfig'
 import { Button } from './Button'
 import { Input } from './Input'
@@ -45,11 +42,10 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
   const [captureError, setCaptureError] = useState('')
   const [captureNotice, setCaptureNotice] = useState('')
   const [captureSession, setCaptureSession] = useState<MobileCaptureSession | null>(null)
+  const [captureToken, setCaptureToken] = useState('')
+  const [captureBaseUrl, setCaptureBaseUrl] = useState('')
   const [captureQrUrl, setCaptureQrUrl] = useState('')
   const [captureLink, setCaptureLink] = useState('')
-  const [publicAppUrlDraft, setPublicAppUrlDraft] = useState(() => getPublicAppBaseUrl())
-  const [captureAddressError, setCaptureAddressError] = useState('')
-  const [captureLinkBusy, setCaptureLinkBusy] = useState(false)
   const [draggingCorner, setDraggingCorner] = useState<DragCorner | null>(null)
   const pagesRef = useRef<ScanPageDraft[]>([])
   const cropEditorRef = useRef<HTMLDivElement | null>(null)
@@ -157,16 +153,17 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
     setCaptureModalOpen(true)
     setCaptureLoading(true)
     setCaptureError('')
-    setCaptureAddressError('')
     setCaptureNotice('')
     setCaptureSession(null)
+    setCaptureToken('')
+    setCaptureBaseUrl('')
     setCaptureQrUrl('')
     setCaptureLink('')
-    setPublicAppUrlDraft(getPublicAppBaseUrl())
 
     try {
       const session = await createMobileCaptureSession()
       setCaptureSession(session)
+      setCaptureToken(session.token || '')
     } catch (error: any) {
       setCaptureError(error?.response?.data?.message || 'Unable to generate the camera QR code right now.')
     } finally {
@@ -179,42 +176,20 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
     setCaptureLoading(false)
     setCaptureResolving(false)
     setCaptureError('')
-    setCaptureAddressError('')
-    setCaptureLinkBusy(false)
-  }
-
-  const restoreCurrentScreenAddress = () => {
-    setPublicAppUrlDraft(window.location.origin)
-    setCaptureAddressError('')
-    setCaptureNotice('Using the current browser address for this QR code.')
-  }
-
-  const savePhoneAddress = () => {
-    const normalized = normalizePublicAppUrl(publicAppUrlDraft)
-    if (!normalized) {
-      setCaptureAddressError('Enter a valid phone-reachable frontend address, for example 192.168.1.20:5173.')
-      return
-    }
-    setPublicAppUrlDraft(normalized)
-    setCaptureAddressError('')
-    setPublicAppUrlOverride(normalized)
-    setCaptureNotice('Saved this phone address for future captures on this desktop.')
-  }
-
-  const clearSavedPhoneAddress = () => {
-    clearPublicAppUrlOverride()
-    setPublicAppUrlDraft(window.location.origin)
-    setCaptureAddressError('')
-    setCaptureNotice('Cleared the saved phone address. The app will use the current browser address again.')
+    setCaptureSession(null)
+    setCaptureToken('')
+    setCaptureBaseUrl('')
+    setCaptureQrUrl('')
+    setCaptureLink('')
   }
 
   const copyCaptureLink = async () => {
     if (!captureLink) return
     try {
       await navigator.clipboard.writeText(captureLink)
-      setCaptureNotice('Phone link copied. You can paste it into WhatsApp or the phone browser.')
+      setCaptureNotice('Phone link copied. You can open it on the phone if scanning is unavailable.')
     } catch {
-      setCaptureError('Unable to copy the phone link automatically. You can still type the address shown below.')
+      setCaptureError('Unable to copy the phone link automatically. Please refresh the QR code and scan it instead.')
     }
   }
 
@@ -224,12 +199,15 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
     setCaptureError('')
     setCaptureNotice('')
     setCaptureSession(null)
+    setCaptureToken('')
+    setCaptureBaseUrl('')
     setCaptureQrUrl('')
     setCaptureLink('')
 
     try {
       const session = await createMobileCaptureSession()
       setCaptureSession(session)
+      setCaptureToken(session.token || '')
     } catch (error: any) {
       setCaptureError(error?.response?.data?.message || 'Unable to generate a new phone capture session right now.')
     } finally {
@@ -266,7 +244,9 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
     const poll = window.setInterval(async () => {
       try {
         const latestSession = await getMobileCaptureSession(captureSession.id!)
-        setCaptureSession(latestSession)
+        setCaptureSession((current) =>
+          current ? { ...current, ...latestSession, token: current.token || latestSession.token } : latestSession,
+        )
 
         if (latestSession.status === 'UPLOADED') {
           setCaptureResolving(true)
@@ -292,53 +272,44 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
   }, [captureModalOpen, captureResolving, captureSession?.id, onFileChange])
 
   useEffect(() => {
-    if (!captureModalOpen || !captureSession?.token) {
+    if (!captureModalOpen || !captureToken) {
+      setCaptureBaseUrl('')
       setCaptureLink('')
       setCaptureQrUrl('')
-      setCaptureLinkBusy(false)
-      return
-    }
-
-    const normalizedBaseUrl = normalizePublicAppUrl(publicAppUrlDraft)
-    if (!normalizedBaseUrl) {
-      setCaptureLink('')
-      setCaptureQrUrl('')
-      setCaptureLinkBusy(false)
-      if (publicAppUrlDraft.trim()) {
-        setCaptureAddressError('Enter a full frontend address the phone can open, such as 192.168.1.20:5173.')
-      }
       return
     }
 
     let active = true
-    const nextCaptureLink = buildMobileCaptureUrl(captureSession.token, normalizedBaseUrl)
-    setCaptureLinkBusy(true)
-    setCaptureLink(nextCaptureLink)
-    setCaptureAddressError('')
+    setCaptureBaseUrl('')
+    setCaptureLink('')
+    setCaptureQrUrl('')
 
-    import('qrcode')
-      .then(({ default: QRCode }) =>
-        QRCode.toDataURL(nextCaptureLink, {
-          margin: 1,
-          width: 280,
-        }),
-      )
-      .then((qrUrl) => {
+    detectPublicAppBaseUrl()
+      .then((resolvedBaseUrl) => {
         if (!active) return
+        setCaptureBaseUrl(resolvedBaseUrl)
+        const nextCaptureLink = buildMobileCaptureUrl(captureToken, resolvedBaseUrl)
+        setCaptureLink(nextCaptureLink)
+        return import('qrcode').then(({ default: QRCode }) =>
+          QRCode.toDataURL(nextCaptureLink, {
+            margin: 1,
+            width: 280,
+          }),
+        )
+      })
+      .then((qrUrl) => {
+        if (!active || !qrUrl) return
         setCaptureQrUrl(qrUrl)
       })
       .catch(() => {
         if (!active) return
-        setCaptureError('Unable to generate the QR code for this phone address.')
-      })
-      .finally(() => {
-        if (active) setCaptureLinkBusy(false)
+        setCaptureError('Unable to prepare phone capture right now.')
       })
 
     return () => {
       active = false
     }
-  }, [captureModalOpen, captureSession?.token, publicAppUrlDraft])
+  }, [captureModalOpen, captureToken])
 
   const startCropDrag = (corner: DragCorner, event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -416,11 +387,6 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
           <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
             Camera or gallery images are optimized first, then attached in a clinic-ready format for easier review and printing.
           </div>
-          {isLikelyLocalOnlyUrl(getPublicAppBaseUrl()) ? (
-            <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-              Phone capture is currently pointing to a local-only frontend address. Open the phone camera option below and save the clinic&apos;s current LAN address before staff scan the QR code.
-            </div>
-          ) : null}
         </>
       ) : (
         <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -649,88 +615,42 @@ export function DocumentFilePicker({ file, onFileChange, className = '' }: Docum
           ) : (
             <>
               <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                Scan this QR code with the phone, open the capture page, take the photo, and it will come back into this upload form automatically.
-              </div>
-              <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Phone-reachable frontend address</p>
-                    <p className="text-xs text-slate-500">
-                      Update this when the clinic Wi-Fi or desktop LAN IP changes.
-                    </p>
-                  </div>
-                  {getStoredPublicAppUrlOverride() ? (
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">Saved</span>
-                  ) : null}
-                </div>
-                <Input
-                  value={publicAppUrlDraft}
-                  onChange={(e) => {
-                    setPublicAppUrlDraft(e.target.value)
-                    setCaptureAddressError('')
-                  }}
-                  placeholder="192.168.1.20:5173"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={savePhoneAddress}>
-                    Save phone address
-                  </Button>
-                  <Button type="button" variant="ghost" onClick={restoreCurrentScreenAddress}>
-                    Use current screen address
-                  </Button>
-                  {getStoredPublicAppUrlOverride() ? (
-                    <Button type="button" variant="ghost" onClick={clearSavedPhoneAddress}>
-                      Clear saved address
-                    </Button>
-                  ) : null}
-                </div>
-                {captureAddressError ? (
-                  <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{captureAddressError}</div>
-                ) : null}
+                Scan this QR code with the phone, take the photo, and it will return to this form automatically.
               </div>
               {captureQrUrl ? (
                 <div className="flex justify-center rounded-3xl border border-slate-200 bg-white p-5">
                   <img src={captureQrUrl} alt="Mobile capture QR code" className="h-64 w-64" />
                 </div>
-              ) : captureLinkBusy ? (
+              ) : (
                 <div className="flex items-center justify-center rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-500">
                   <LoaderCircle className="mr-2 animate-spin" size={18} />
-                  Preparing phone link...
+                  Preparing QR code...
+                </div>
+              )}
+              {captureBaseUrl && isLikelyLocalOnlyUrl(captureBaseUrl || getPublicAppBaseUrl()) ? (
+                <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
+                  If the phone cannot open this code, please use direct file upload or ask an administrator for help.
                 </div>
               ) : null}
               {captureLink ? (
-                <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-sm font-medium text-slate-900">Phone link</p>
-                  <Input value={captureLink} readOnly />
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" variant="secondary" onClick={copyCaptureLink}>
-                      Copy link
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={regenerateCaptureSession}>
-                      Generate fresh session
-                    </Button>
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={regenerateCaptureSession}>
+                    Refresh QR code
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={copyCaptureLink}>
+                    Copy phone link
+                  </Button>
                 </div>
               ) : null}
               <div className="rounded-2xl bg-brand-50 p-4 text-sm text-brand-800">
                 {captureResolving
                   ? 'Photo received. Finishing the handoff...'
                   : captureSession?.status === 'EXPIRED'
-                    ? 'This link expired before the phone uploaded the photo. Generate a fresh session and rescan it.'
-                  : captureSession?.status === 'UPLOADED'
-                    ? 'Photo uploaded from the phone. Bringing it into this form now.'
-                    : 'Waiting for the phone to capture and upload the image.'}
+                    ? 'This code expired before the photo was sent. Refresh the code and scan again.'
+                    : captureSession?.status === 'UPLOADED'
+                    ? 'Photo received. Bringing it into this form now.'
+                    : 'Waiting for the phone to take and send the photo.'}
               </div>
-              {captureSession?.expiresAt ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  This capture session expires at {new Date(captureSession.expiresAt).toLocaleString()}.
-                </div>
-              ) : null}
-              {isLikelyLocalOnlyUrl(normalizePublicAppUrl(publicAppUrlDraft) || getPublicAppBaseUrl()) ? (
-                <div className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-800">
-                  This QR code still uses a local-only address. Replace it with the clinic&apos;s current LAN address before staff scan it.
-                </div>
-              ) : null}
             </>
           )}
         </div>

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { getBranches } from '../api/branchApi'
-import { registerPatient, searchPatients, suggestPatients } from '../api/patientApi'
+import { listVisiblePatients, registerPatient, searchPatients, suggestPatients } from '../api/patientApi'
 import type { Branch } from '../types/branch'
 import type { CreatePatientPayload, Gender, Patient } from '../types/patient'
 import { Button } from '../components/ui/Button'
@@ -59,7 +59,11 @@ function hasMeaningfulRegistrationDraft(form: CreatePatientPayload, patientDetai
 
 export function PatientsPage() {
   const { isAdmin } = useAuth()
+  const navigate = useNavigate()
+  const hasAppliedInitialSearch = useRef(false)
+  const [searchParams] = useSearchParams()
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [branches, setBranches] = useState<Branch[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(false)
@@ -74,6 +78,7 @@ export function PatientsPage() {
   const [registerSaving, setRegisterSaving] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [registrationDraftRecovered, setRegistrationDraftRecovered] = useState(false)
+  const doctorNotesIntent = searchParams.get('intent') === 'doctor-notes'
 
   const resetRegistrationForm = () => {
     setRegisterOpen(false)
@@ -95,10 +100,24 @@ export function PatientsPage() {
   }
 
   const runSearch = async (term = query) => {
+    const trimmedTerm = term.trim()
+    if (!trimmedTerm) {
+      setLoading(true)
+      setSearchError('')
+      try {
+        setPatients(await listVisiblePatients())
+      } catch (err: any) {
+        setSearchError(err?.response?.data?.message || 'Unable to load patients right now. Check the clinic network settings and try again.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
     setLoading(true)
     setSearchError('')
     try {
-      setPatients(await searchPatients(term))
+      setPatients(await searchPatients(trimmedTerm))
     } catch (err: any) {
       setSearchError(err?.response?.data?.message || 'Unable to search patients right now. Check the clinic network settings and try again.')
     } finally {
@@ -163,6 +182,32 @@ export function PatientsPage() {
     }
   }, [query])
 
+  useEffect(() => {
+    const trimmedQuery = query.trim()
+    if (!trimmedQuery) {
+      setDebouncedQuery('')
+      return
+    }
+
+    if (trimmedQuery.length < 2) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedQuery(trimmedQuery)
+    }, 220)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [query])
+
+  useEffect(() => {
+    if (!hasAppliedInitialSearch.current) {
+      hasAppliedInitialSearch.current = true
+      return
+    }
+    runSearch(debouncedQuery)
+  }, [debouncedQuery])
+
   const onCreatePatient = async (e: FormEvent) => {
     e.preventDefault()
     setError('')
@@ -200,7 +245,18 @@ export function PatientsPage() {
     }
   }
 
+  const openPatient = (patient: Patient) => {
+    if (!patient.id) return
+    navigate(`/patients/${patient.id}`, {
+      state: doctorNotesIntent ? { openDoctorNotes: true } : undefined,
+    })
+  }
+
   const chooseSuggestion = async (patient: Patient) => {
+    if (doctorNotesIntent) {
+      openPatient(patient)
+      return
+    }
     const nextQuery = patient.fileNumber || patientDisplayName(patient.name, patient.surname, patient.fullName)
     setQuery(String(nextQuery || ''))
     setShowSuggestions(false)
@@ -230,6 +286,7 @@ export function PatientsPage() {
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   setShowSuggestions(false)
+                  setDebouncedQuery(query.trim())
                   runSearch(query)
                 }
               }}
@@ -268,6 +325,7 @@ export function PatientsPage() {
 
           <Button onClick={() => {
             setShowSuggestions(false)
+            setDebouncedQuery(query.trim())
             runSearch()
           }}>
             Search
@@ -277,6 +335,17 @@ export function PatientsPage() {
           </Button>
         </div>
       </Card>
+
+      {doctorNotesIntent ? (
+        <Card className="border-brand-200 bg-brand-50">
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-brand-900">Upload Doctor&apos;s Notes</p>
+            <p className="text-sm text-brand-800">
+              Enter the patient&apos;s name or file number. Matching patients will appear as you type. Select the correct patient to continue straight into the Doctor&apos;s Notes upload form.
+            </p>
+          </div>
+        </Card>
+      ) : null}
 
       {searchError ? (
         <Card className="border-rose-200 bg-rose-50">
@@ -330,9 +399,17 @@ export function PatientsPage() {
                   Branch: {p.branchName || '--'} | Admission: {toDate(p.dateOfAdmission)}
                 </p>
               </div>
-              <Link to={`/patients/${p.id}`}>
-                <Button>View profile</Button>
+              <Link
+                to={`/patients/${p.id}`}
+                state={doctorNotesIntent ? { openDoctorNotes: true } : undefined}
+              >
+                <Button>{doctorNotesIntent ? "Open Doctor's Notes" : 'View profile'}</Button>
               </Link>
+              {doctorNotesIntent ? (
+                <Button type="button" variant="secondary" onClick={() => openPatient(p)}>
+                  Select Patient
+                </Button>
+              ) : null}
             </div>
           </Card>
         ))}
@@ -373,7 +450,14 @@ export function PatientsPage() {
               </option>
             ))}
           </Select>
-          <Input type="date" value={String(form.dateOfBirth || '')} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} />
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-700">Date of Birth</span>
+            <Input
+              type="date"
+              value={String(form.dateOfBirth || '')}
+              onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })}
+            />
+          </label>
           <Input placeholder="ID Number" value={String(form.idNumber || '')} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} />
           <Input placeholder="Contact" value={String(form.contact || '')} onChange={(e) => setForm({ ...form, contact: e.target.value })} />
           <Input placeholder="Email Address" value={String(form.emailAddress || '')} onChange={(e) => setForm({ ...form, emailAddress: e.target.value })} />
@@ -383,7 +467,14 @@ export function PatientsPage() {
           <Input placeholder="Next of Kin Name" value={String(form.nextOfKinName || '')} onChange={(e) => setForm({ ...form, nextOfKinName: e.target.value })} />
           <Input placeholder="Next of Kin Relationship" value={String(form.nextOfKinRelationship || '')} onChange={(e) => setForm({ ...form, nextOfKinRelationship: e.target.value })} />
           <Input placeholder="Next of Kin Contact" value={String(form.nextOfKinContact || '')} onChange={(e) => setForm({ ...form, nextOfKinContact: e.target.value })} />
-          <Input type="date" value={String(form.dateOfAdmission || '')} onChange={(e) => setForm({ ...form, dateOfAdmission: e.target.value })} />
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-slate-700">Date of Admission</span>
+            <Input
+              type="date"
+              value={String(form.dateOfAdmission || '')}
+              onChange={(e) => setForm({ ...form, dateOfAdmission: e.target.value })}
+            />
+          </label>
           <DocumentFilePicker
             className="md:col-span-2"
             file={patientDetailsFile}
