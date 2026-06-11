@@ -15,6 +15,7 @@ import type {
 } from '../types/invoice'
 import { buildInvoiceDocumentHtml, buildReceiptDocumentHtml } from '../utils/invoicePrint'
 import { formatCurrency, toDate, toDateTime } from '../utils/format'
+import { printReceiptDirect, shouldUseDirectReceiptPrinting } from '../utils/receiptPrinter'
 
 type UpdateLineDraft = {
   invoiceLineId: string | number
@@ -194,13 +195,33 @@ export function InvoiceDetailPage() {
     }
   }
 
-  const printPreview = () => {
+  const printReceipt = async (receipt: Receipt | null) => {
+    if (!invoice || !receipt) return
+
+    if (shouldUseDirectReceiptPrinting()) {
+      try {
+        setPageError('')
+        await printReceiptDirect(invoice, receipt)
+        return
+      } catch (err: unknown) {
+        setPageError(`${extractErrorMessage(err, 'Direct receipt printing is unavailable right now.')} Opening browser print preview instead.`)
+      }
+    }
+
+    const html = buildReceiptDocumentHtml(invoice, receipt, true)
+    if (!html) return
+    openDocumentWindow(html)
+  }
+
+  const printPreview = async () => {
     if (!invoice || !previewState) return
 
-    const html =
-      previewState.kind === 'invoice'
-        ? buildInvoiceDocumentHtml(invoice, true)
-        : buildReceiptDocumentHtml(invoice, previewReceipt, true)
+    if (previewState.kind === 'receipt') {
+      await printReceipt(previewReceipt)
+      return
+    }
+
+    const html = buildInvoiceDocumentHtml(invoice, true)
     if (!html) return
     openDocumentWindow(html)
   }
@@ -394,10 +415,7 @@ export function InvoiceDetailPage() {
                       <Download size={16} />
                       <span className="ml-2">Save as PDF</span>
                     </Button>
-                    <Button variant="secondary" onClick={() => {
-                      setPreviewState({ kind: 'receipt', receiptId: receipt.id || '' })
-                      window.setTimeout(() => printPreview(), 0)
-                    }}>
+                    <Button variant="secondary" onClick={() => void printReceipt(receipt)}>
                       <Printer size={16} />
                       <span className="ml-2">Print Receipt</span>
                     </Button>
@@ -605,7 +623,7 @@ export function InvoiceDetailPage() {
             <Download size={16} />
             <span className="ml-2">Save as PDF</span>
           </Button>
-          <Button onClick={printPreview}>
+          <Button onClick={() => void printPreview()}>
             <Printer size={16} />
             <span className="ml-2">Print</span>
           </Button>
@@ -1111,7 +1129,7 @@ async function buildReceiptPdf(invoice: Invoice, receipt: Receipt) {
   const regularFont = await pdfDoc.embedFont(pdf.StandardFonts.Helvetica)
   const boldFont = await pdfDoc.embedFont(pdf.StandardFonts.HelveticaBold)
   const logoImage = await embedDocumentLogo(pdfDoc)
-  const state = createPdfState(pdf, pdfDoc, regularFont, boldFont, [226.77, 520], 16, 20)
+  const state = createPdfState(pdf, pdfDoc, regularFont, boldFont, [164.41, 520], 11, 18)
 
   drawPdfReceipt(state, invoice, receipt, logoImage)
 
@@ -1499,7 +1517,7 @@ function drawPdfInvoiceFooter(state: PdfState, invoice: Invoice) {
 
 function drawPdfReceipt(state: PdfState, invoice: Invoice, receipt: Receipt, logoImage: any) {
   const { rgb } = state.pdf
-  const logoBounds = fitPdfImage(logoImage, 150, 70)
+  const logoBounds = fitPdfImage(logoImage, 108, 50)
   const centerX = state.width / 2
 
   state.page.drawImage(logoImage, {
@@ -1508,13 +1526,13 @@ function drawPdfReceipt(state: PdfState, invoice: Invoice, receipt: Receipt, log
     width: logoBounds.width,
     height: logoBounds.height,
   })
-  state.y -= logoBounds.height + 12
+  state.y -= logoBounds.height + 8
 
   drawReceiptDivider(state)
-  state.y -= 10
+  state.y -= 7
 
   buildDocumentContactLines(invoice).slice(0, 3).forEach((line, index) => {
-    const size = index === 0 ? 10.5 : 9
+    const size = index === 0 ? 8.5 : 7.6
     const font = index === 0 ? state.boldFont : state.regularFont
     const textWidth = font.widthOfTextAtSize(line, size)
     state.page.drawText(line, {
@@ -1524,123 +1542,123 @@ function drawPdfReceipt(state: PdfState, invoice: Invoice, receipt: Receipt, log
       font,
       color: rgb(0.06, 0.11, 0.18),
     })
-    state.y -= 13
+    state.y -= 10
   })
 
   drawReceiptDivider(state)
-  state.y -= 18
+  state.y -= 11
 
-  const titleWidth = state.boldFont.widthOfTextAtSize('INVOICE', 18)
-  state.page.drawText('INVOICE', {
+  const titleWidth = state.boldFont.widthOfTextAtSize('RECEIPT', 14)
+  state.page.drawText('RECEIPT', {
     x: centerX - titleWidth / 2,
     y: state.y,
-    size: 18,
+    size: 14,
     font: state.boldFont,
     color: rgb(0.04, 0.44, 0.79),
   })
-  state.y -= 18
+  state.y -= 14
 
-  const numberBoxY = state.y - 16
+  const numberBoxY = state.y - 13
   state.page.drawRectangle({
     x: state.margin,
     y: numberBoxY,
     width: state.width - state.margin * 2,
-    height: 20,
+    height: 16,
     color: rgb(0.02, 0.11, 0.18),
     borderRadius: 4,
   })
-  const invoiceNumber = sanitizePdfText(invoice.invoiceNumber || '--')
-  const numberTextWidth = state.boldFont.widthOfTextAtSize(invoiceNumber, 10)
-  state.page.drawText(invoiceNumber, {
-    x: Math.max(state.margin + 6, centerX - numberTextWidth / 2),
-    y: numberBoxY + 6,
-    size: 10,
+  const receiptNumber = sanitizePdfText(receipt.receiptNumber || invoice.invoiceNumber || '--')
+  const numberTextWidth = state.boldFont.widthOfTextAtSize(receiptNumber, 8.2)
+  state.page.drawText(receiptNumber, {
+    x: Math.max(state.margin + 4, centerX - numberTextWidth / 2),
+    y: numberBoxY + 5,
+    size: 8.2,
     font: state.boldFont,
     color: rgb(1, 1, 1),
   })
-  state.y = numberBoxY - 18
+  state.y = numberBoxY - 13
 
   const receiptMetaRows: Array<[string, string]> = [
     ['Date', toDateTime(receipt.issuedAt || invoice.issuedAt)],
     ['Patient', invoice.patientName || '--'],
     ['File No', invoice.patientFileNumber || '--'],
-    ['Status', formatStatusLabel(invoice.status)],
+    ['Status', formatStatusLabel(receipt.status || invoice.status)],
   ]
   receiptMetaRows.forEach(([label, value], index) => {
     state.page.drawText(`${label}:`, {
       x: state.margin,
       y: state.y,
-      size: 9.5,
+      size: 8,
       font: state.boldFont,
       color: rgb(0.06, 0.11, 0.18),
     })
-    const lines = wrapPdfTextByWidth(state.regularFont, value, 9.5, state.width - state.margin * 2 - 52)
+    const lines = wrapPdfTextByWidth(state.regularFont, value, 8, state.width - state.margin * 2 - 38)
     state.page.drawText(lines[0] || '--', {
-      x: state.margin + 48,
+      x: state.margin + 34,
       y: state.y,
-      size: 9.5,
+      size: 8,
       font: state.regularFont,
       color: index === 3 ? rgb(0.04, 0.44, 0.79) : rgb(0.2, 0.25, 0.33),
     })
-    state.y -= 13
+    state.y -= 10
   })
 
   drawReceiptDivider(state)
-  state.y -= 12
+  state.y -= 9
 
-  state.page.drawText('ITEM', { x: state.margin, y: state.y, size: 9, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
-  state.page.drawText('QTY', { x: state.width - state.margin - 62, y: state.y, size: 9, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
-  state.page.drawText('PRICE', { x: state.width - state.margin - 30, y: state.y, size: 9, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
-  state.y -= 10
+  state.page.drawText('ITEM', { x: state.margin, y: state.y, size: 7.6, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
+  state.page.drawText('QTY', { x: state.width - state.margin - 45, y: state.y, size: 7.6, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
+  state.page.drawText('PRICE', { x: state.width - state.margin - 23, y: state.y, size: 7.6, font: state.boldFont, color: rgb(0.04, 0.44, 0.79) })
+  state.y -= 8
 
   for (const line of invoice.lines || []) {
-    const itemLines = wrapPdfTextByWidth(state.boldFont, line.itemName || '--', 9.5, state.width - state.margin * 2 - 74)
+    const itemLines = wrapPdfTextByWidth(state.boldFont, line.itemName || '--', 8.2, state.width - state.margin * 2 - 56)
     const codeText = `Code: ${line.itemCode || '--'}`
 
     state.page.drawText(itemLines[0] || '--', {
       x: state.margin,
       y: state.y,
-      size: 9.5,
+      size: 8.2,
       font: state.boldFont,
       color: rgb(0.06, 0.11, 0.18),
     })
     if (itemLines[1]) {
-      state.y -= 10
+      state.y -= 8
       state.page.drawText(itemLines[1], {
         x: state.margin,
         y: state.y,
-        size: 9.5,
+        size: 8.2,
         font: state.boldFont,
         color: rgb(0.06, 0.11, 0.18),
       })
     }
-    state.y -= 10
+    state.y -= 8
     state.page.drawText(codeText, {
       x: state.margin,
       y: state.y,
-      size: 8.5,
+      size: 7.2,
       font: state.regularFont,
       color: rgb(0.4, 0.47, 0.56),
     })
     state.page.drawText(String(line.quantity || 1), {
-      x: state.width - state.margin - 54,
-      y: state.y + 10,
-      size: 9.5,
+      x: state.width - state.margin - 39,
+      y: state.y + 8,
+      size: 8,
       font: state.regularFont,
       color: rgb(0.06, 0.11, 0.18),
     })
     const priceLabel = formatCurrency(line.lineTotal, resolveCurrency(line.currency, invoice.currency))
-    const priceWidth = state.regularFont.widthOfTextAtSize(priceLabel, 9.5)
+    const priceWidth = state.regularFont.widthOfTextAtSize(priceLabel, 8)
     state.page.drawText(priceLabel, {
       x: state.width - state.margin - priceWidth,
-      y: state.y + 10,
-      size: 9.5,
+      y: state.y + 8,
+      size: 8,
       font: state.regularFont,
       color: rgb(0.06, 0.11, 0.18),
     })
-    state.y -= 12
+    state.y -= 9
     drawReceiptDivider(state)
-    state.y -= 10
+    state.y -= 7
   }
 
   const totalRows: Array<[string, string, boolean]> = [
@@ -1650,13 +1668,13 @@ function drawPdfReceipt(state: PdfState, invoice: Invoice, receipt: Receipt, log
   ]
   totalRows.forEach(([label, value, emphasis]) => {
     state.page.drawText(label, {
-      x: state.margin + 70,
+      x: state.margin + 42,
       y: state.y,
-      size: emphasis ? 10.5 : 9.5,
+      size: emphasis ? 9.2 : 8,
       font: emphasis ? state.boldFont : state.regularFont,
       color: emphasis ? rgb(0.04, 0.44, 0.79) : rgb(0.06, 0.11, 0.18),
     })
-    const valueSize = emphasis ? 12 : 9.5
+    const valueSize = emphasis ? 10 : 8
     const valueWidth = state.boldFont.widthOfTextAtSize(value, valueSize)
     state.page.drawText(value, {
       x: state.width - state.margin - valueWidth,
@@ -1665,11 +1683,11 @@ function drawPdfReceipt(state: PdfState, invoice: Invoice, receipt: Receipt, log
       font: state.boldFont,
       color: emphasis ? rgb(0.04, 0.44, 0.79) : rgb(0.06, 0.11, 0.18),
     })
-    state.y -= 14
+    state.y -= 11
   })
 
   drawReceiptDivider(state)
-  state.y -= 14
+  state.y -= 10
 
   ;[
     'Thank you for choosing Sandton 24 Clinic.',

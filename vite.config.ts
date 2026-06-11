@@ -6,10 +6,12 @@ function getPrivateNetworkUrls(port: number) {
   const interfaces = networkInterfaces()
   const urls: string[] = []
 
-  for (const interfaceEntries of Object.values(interfaces)) {
+  for (const [interfaceName, interfaceEntries] of Object.entries(interfaces)) {
     for (const entry of interfaceEntries || []) {
       if (entry.family !== 'IPv4' || entry.internal) continue
       if (!/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(entry.address)) continue
+      if (entry.netmask === '255.255.255.255' || entry.cidr?.endsWith('/32')) continue
+      if (/appgate|vpn|virtual|pseudo/i.test(interfaceName)) continue
       urls.push(`http://${entry.address}:${port}`)
     }
   }

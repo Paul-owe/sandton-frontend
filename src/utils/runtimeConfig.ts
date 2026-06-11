@@ -3,7 +3,17 @@ declare const __SFMS_NETWORK_PUBLIC_APP_URLS__: string[]
 const STORAGE_KEYS = {
   apiBaseUrl: 'sfms.runtime.apiBaseUrl',
   publicAppUrl: 'sfms.runtime.publicAppUrl',
+  receiptPrinterMode: 'sfms.runtime.receiptPrinterMode',
+  receiptPrinterProfile: 'sfms.runtime.receiptPrinterProfile',
+  receiptPrinterPaperWidth: 'sfms.runtime.receiptPrinterPaperWidth',
+  receiptPrinterName: 'sfms.runtime.receiptPrinterName',
 } as const
+
+export type ReceiptPrinterProfile = 'browser' | 'thermal-58mm-escpos'
+export type ReceiptPrinterPaperWidth = '58mm'
+
+const DEFAULT_RECEIPT_PRINTER_PROFILE: ReceiptPrinterProfile = 'browser'
+const DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH: ReceiptPrinterPaperWidth = '58mm'
 
 export const defaultApiBaseUrl = `${window.location.protocol}//${window.location.hostname || '127.0.0.1'}:18081/api/v1`
 export const defaultPublicAppUrl = normalizeBaseUrl(window.location.origin) || window.location.origin
@@ -66,6 +76,36 @@ export function getStoredApiBaseUrlOverride() {
 
 export function getStoredPublicAppUrlOverride() {
   return normalizePublicAppUrl(readStoredValue(STORAGE_KEYS.publicAppUrl))
+}
+
+function normalizeReceiptPrinterProfile(value: string): ReceiptPrinterProfile {
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'qz' || normalized === 'thermal-58mm-escpos') {
+    return 'thermal-58mm-escpos'
+  }
+  return DEFAULT_RECEIPT_PRINTER_PROFILE
+}
+
+function normalizeReceiptPrinterPaperWidth(value: string): ReceiptPrinterPaperWidth {
+  return value.trim() === '58mm' ? '58mm' : DEFAULT_RECEIPT_PRINTER_PAPER_WIDTH
+}
+
+export function getStoredReceiptPrinterProfile(): ReceiptPrinterProfile {
+  const storedProfile = readStoredValue(STORAGE_KEYS.receiptPrinterProfile)
+  if (storedProfile) {
+    return normalizeReceiptPrinterProfile(storedProfile)
+  }
+
+  const legacyMode = readStoredValue(STORAGE_KEYS.receiptPrinterMode)
+  return normalizeReceiptPrinterProfile(legacyMode)
+}
+
+export function getStoredReceiptPrinterPaperWidth(): ReceiptPrinterPaperWidth {
+  return normalizeReceiptPrinterPaperWidth(readStoredValue(STORAGE_KEYS.receiptPrinterPaperWidth))
+}
+
+export function getStoredReceiptPrinterName() {
+  return readStoredValue(STORAGE_KEYS.receiptPrinterName)
 }
 
 function isLocalOnlyHostname(hostname: string) {
@@ -216,6 +256,25 @@ export function setPublicAppUrlOverride(value: string) {
   return normalized
 }
 
+export function setReceiptPrinterProfile(value: ReceiptPrinterProfile) {
+  const normalized = normalizeReceiptPrinterProfile(value)
+  writeStoredValue(STORAGE_KEYS.receiptPrinterProfile, normalized)
+  writeStoredValue(STORAGE_KEYS.receiptPrinterMode, normalized === 'thermal-58mm-escpos' ? 'qz' : 'browser')
+  return normalized
+}
+
+export function setReceiptPrinterPaperWidth(value: ReceiptPrinterPaperWidth) {
+  const normalized = normalizeReceiptPrinterPaperWidth(value)
+  writeStoredValue(STORAGE_KEYS.receiptPrinterPaperWidth, normalized)
+  return normalized
+}
+
+export function setReceiptPrinterName(value: string) {
+  const normalized = value.trim()
+  writeStoredValue(STORAGE_KEYS.receiptPrinterName, normalized)
+  return normalized
+}
+
 export function clearApiBaseUrlOverride() {
   writeStoredValue(STORAGE_KEYS.apiBaseUrl, '')
 }
@@ -226,6 +285,13 @@ export function clearTransientApiBaseUrlOverride() {
 
 export function clearPublicAppUrlOverride() {
   writeStoredValue(STORAGE_KEYS.publicAppUrl, '')
+}
+
+export function clearReceiptPrinterSettings() {
+  writeStoredValue(STORAGE_KEYS.receiptPrinterMode, '')
+  writeStoredValue(STORAGE_KEYS.receiptPrinterProfile, '')
+  writeStoredValue(STORAGE_KEYS.receiptPrinterPaperWidth, '')
+  writeStoredValue(STORAGE_KEYS.receiptPrinterName, '')
 }
 
 export function buildMobileCaptureUrl(token: string, baseUrl = getPublicAppBaseUrl()) {

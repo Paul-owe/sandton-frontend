@@ -116,11 +116,11 @@ function buildA4InvoiceTemplate(invoice: Invoice) {
 }
 
 function buildReceipt80mmTemplate(invoice: Invoice, receipt: Receipt) {
-  const invoiceNumber = escapeHtml(resolveInvoiceNumber(invoice))
+  const receiptNumber = escapeHtml(receipt.receiptNumber || resolveInvoiceNumber(invoice))
   const issuedAt = escapeHtml(formatDocumentDateTime(receipt.issuedAt || invoice.issuedAt))
   const patientName = escapeHtml(invoice.patientName || '--')
   const fileNumber = escapeHtml(invoice.patientFileNumber || '--')
-  const status = escapeHtml(formatStatusLabel(invoice.status))
+  const status = escapeHtml(formatStatusLabel(receipt.status || invoice.status))
 
   return `
     <div class="receipt-80mm-page">
@@ -140,15 +140,15 @@ function buildReceipt80mmTemplate(invoice: Invoice, receipt: Receipt) {
         <div class="receipt-80mm-divider"></div>
 
         <section class="receipt-80mm-title">
-          <h1>INVOICE</h1>
-          <p class="receipt-80mm-number">${invoiceNumber}</p>
+          <h1>RECEIPT</h1>
+          <p class="receipt-80mm-number">${receiptNumber}</p>
         </section>
 
         <section class="receipt-80mm-meta">
           ${buildReceiptMetaRow('Date', issuedAt)}
           ${buildReceiptMetaRow('Patient', patientName)}
           ${buildReceiptMetaRow('File No', fileNumber)}
-          ${buildReceiptMetaRow('Status', `<span class="${getStatusClass(invoice.status)}">${status}</span>`)}
+          ${buildReceiptMetaRow('Status', `<span class="${getStatusClass(receipt.status || invoice.status)}">${status}</span>`)}
         </section>
 
         <div class="receipt-80mm-divider receipt-80mm-divider--dashed"></div>
@@ -292,7 +292,7 @@ function buildDocumentHtml({
 function buildDocumentStyles(layout: 'a4' | 'receipt') {
   const pageRule = layout === 'a4'
     ? '@page { size: A4 portrait; margin: 0; }'
-    : '@page { size: 80mm auto; margin: 0; }'
+    : '@page { size: 58mm auto; margin: 0; }'
 
   return `
     :root {
@@ -628,18 +628,18 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     }
 
     .receipt-80mm-page {
-      width: 80mm;
+      width: 58mm;
       background: var(--white);
       box-sizing: border-box;
-      padding: 4mm;
+      padding: 5mm;
     }
 
     .receipt-80mm-inner {
-      width: 72mm;
+      width: 48mm;
       margin: 0 auto;
       color: var(--primary-navy);
-      font-size: 12px;
-      line-height: 1.45;
+      font-size: 10.5px;
+      line-height: 1.35;
     }
 
     .receipt-80mm-logo {
@@ -666,12 +666,12 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     .receipt-80mm-contact {
       display: flex;
       flex-direction: column;
-      gap: 1.1mm;
+      gap: 1mm;
       color: var(--soft-text);
     }
 
     .receipt-80mm-contact__branch {
-      font-size: 14px;
+      font-size: 11.5px;
       font-weight: 700;
       color: var(--primary-navy);
     }
@@ -685,12 +685,12 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2mm;
-      padding: 3.2mm 0;
+      gap: 1.5mm;
+      padding: 2.4mm 0;
     }
 
     .receipt-80mm-title h1 {
-      font-size: 22px;
+      font-size: 17px;
       line-height: 1.1;
       letter-spacing: 0.04em;
       color: var(--medical-blue);
@@ -699,11 +699,11 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     .receipt-80mm-number {
       width: 100%;
       margin: 0;
-      padding: 2.2mm 3mm;
-      border-radius: 3mm;
+      padding: 1.8mm 2mm;
+      border-radius: 2.5mm;
       background: var(--primary-navy);
       color: var(--white);
-      font-size: 13px;
+      font-size: 10.5px;
       font-weight: 700;
       overflow-wrap: anywhere;
     }
@@ -711,15 +711,15 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     .receipt-80mm-meta {
       display: flex;
       flex-direction: column;
-      gap: 1.7mm;
-      padding: 2.2mm 0;
+      gap: 1.2mm;
+      padding: 1.8mm 0;
     }
 
     .receipt-80mm-meta__row,
     .receipt-80mm-total {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 3mm;
+      gap: 1.6mm;
       align-items: start;
     }
 
@@ -736,18 +736,18 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     }
 
     .receipt-80mm-items {
-      padding-top: 2mm;
+      padding-top: 1.4mm;
     }
 
     .receipt-80mm-items__head {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 9mm 16mm;
-      gap: 2mm;
-      padding-bottom: 2mm;
-      font-size: 11px;
+      grid-template-columns: minmax(0, 1fr) 7mm 13mm;
+      gap: 1.4mm;
+      padding-bottom: 1.5mm;
+      font-size: 9px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.04em;
       color: var(--medical-blue);
       border-bottom: 0.45mm solid var(--medical-blue);
     }
@@ -758,9 +758,9 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
 
     .receipt-80mm-item {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 9mm 16mm;
-      gap: 2mm;
-      padding: 3mm 0;
+      grid-template-columns: minmax(0, 1fr) 7mm 13mm;
+      gap: 1.4mm;
+      padding: 2.4mm 0;
       border-bottom: 0.3mm solid var(--divider-blue);
       align-items: start;
     }
@@ -771,57 +771,57 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     }
 
     .receipt-80mm-item__name {
-      font-size: 13px;
+      font-size: 10.5px;
       font-weight: 700;
       overflow-wrap: anywhere;
     }
 
     .receipt-80mm-item__code {
-      margin-top: 0.6mm;
-      font-size: 11px;
+      margin-top: 0.5mm;
+      font-size: 9px;
       color: var(--muted-text);
       overflow-wrap: anywhere;
     }
 
     .receipt-80mm-item__qty {
       text-align: center;
-      font-size: 13px;
+      font-size: 10px;
     }
 
     .receipt-80mm-item__price {
       text-align: right;
-      font-size: 13px;
+      font-size: 10px;
     }
 
     .receipt-80mm-totals {
       display: flex;
       flex-direction: column;
-      gap: 1.5mm;
-      padding: 2.8mm 0;
+      gap: 1.2mm;
+      padding: 2.2mm 0;
     }
 
     .receipt-80mm-total strong {
       color: var(--primary-navy);
-      font-size: 14px;
+      font-size: 11px;
     }
 
     .receipt-80mm-total--balance span,
     .receipt-80mm-total--balance strong {
       font-weight: 800;
       color: var(--medical-blue);
-      font-size: 15px;
+      font-size: 12.5px;
     }
 
     .receipt-80mm-thanks {
       display: flex;
       flex-direction: column;
-      gap: 1.2mm;
-      padding: 3.2mm 2mm;
+      gap: 1mm;
+      padding: 2.4mm 1mm;
       color: var(--soft-text);
     }
 
     .receipt-80mm-thanks__headline {
-      font-size: 13px;
+      font-size: 10.5px;
       font-weight: 700;
       color: var(--medical-blue);
     }
@@ -829,9 +829,9 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     .receipt-80mm-footer {
       display: flex;
       flex-direction: column;
-      gap: 1.2mm;
-      padding: 2.4mm 0 0.6mm;
-      font-size: 11px;
+      gap: 1mm;
+      padding: 2mm 0 0.4mm;
+      font-size: 9px;
       color: var(--soft-text);
     }
 
@@ -842,7 +842,7 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
 
     .receipt-80mm-divider {
       border-top: 0.3mm solid var(--divider-blue);
-      margin: 2.6mm 0;
+      margin: 2mm 0;
     }
 
     .receipt-80mm-divider--dashed {
@@ -862,7 +862,7 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     }
 
     .sandton-logo--receipt {
-      width: 54mm;
+      width: 38mm;
     }
 
     .sandton-logo__icon {
@@ -883,6 +883,11 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
       font-size: 25px;
     }
 
+    .sandton-logo--receipt .sandton-logo__wordmark {
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+
     .sandton-logo__clinic {
       width: 100%;
       display: flex;
@@ -897,6 +902,12 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
     .sandton-logo--a4 .sandton-logo__clinic {
       font-size: 16px;
       letter-spacing: 0.44em;
+    }
+
+    .sandton-logo--receipt .sandton-logo__clinic {
+      gap: 1.2mm;
+      font-size: 9px;
+      letter-spacing: 0.2em;
     }
 
     .sandton-logo__clinic span:nth-child(2) {
@@ -921,6 +932,11 @@ function buildDocumentStyles(layout: 'a4' | 'receipt') {
 
     .sandton-logo--a4 .sandton-logo__tagline {
       font-size: 14px;
+    }
+
+    .sandton-logo--receipt .sandton-logo__tagline {
+      font-size: 7.5px;
+      letter-spacing: 0.01em;
     }
 
     .status-paid {

@@ -6,6 +6,7 @@ import type { MobileCaptureSession } from '../types/mobileCapture'
 import { Button } from '../components/ui/Button'
 import { Card } from '../components/ui/Card'
 import {
+  getApiBaseUrl,
   clearTransientApiBaseUrlOverride,
   normalizeApiBaseUrl,
   setTransientApiBaseUrlOverride,
@@ -20,6 +21,7 @@ export function MobileCapturePage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const apiBaseUrlFromLink = normalizeApiBaseUrl(new URLSearchParams(window.location.search).get('api') || '')
+  const resolvedApiBaseUrl = apiBaseUrlFromLink || getApiBaseUrl()
 
   useEffect(() => {
     if (!apiBaseUrlFromLink) return
@@ -84,7 +86,14 @@ export function MobileCapturePage() {
               Validating capture session...
             </div>
           ) : error ? (
-            <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</div>
+            <div className="space-y-3 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">
+              <p>{error}</p>
+              <div className="rounded-xl bg-white/70 p-3 text-xs text-rose-800">
+                <p>Capture token: {token || '--'}</p>
+                <p>API target: {resolvedApiBaseUrl || '--'}</p>
+                <p>If this started after a network/IP change, confirm the backend is reachable on this phone at the API target above.</p>
+              </div>
+            </div>
           ) : success ? (
             <div className="space-y-4">
               <div className="rounded-2xl bg-emerald-50 p-5 text-center text-emerald-800">
